@@ -2974,6 +2974,10 @@ func (m *Monitor) ApplyHostReport(report agentshost.Report, tokenRecord *config.
 
 	// Link host agent to matching PVE node/VM/container by hostname
 	// This prevents duplication when users install agents on PVE cluster nodes
+	//
+	// Preserve existing manual links: if a previous heartbeat (or the /api/agents/host/link
+	// endpoint) already set LinkedNodeID/LinkedVMID/LinkedContainerID, keep those when
+	// auto-linking returns empty (which happens when multiple nodes share a hostname).
 	linkedNodeID, linkedVMID, linkedContainerID := m.findLinkedProxmoxEntity(hostname)
 	if linkedNodeID != "" {
 		host.LinkedNodeID = linkedNodeID
@@ -2982,6 +2986,14 @@ func (m *Monitor) ApplyHostReport(report agentshost.Report, tokenRecord *config.
 			Str("hostname", hostname).
 			Str("linkedNodeId", linkedNodeID).
 			Msg("Linked host agent to PVE node")
+	} else if hasPrevious && previous.LinkedNodeID != "" {
+		// Auto-link returned empty (ambiguous or no match) but a manual link exists — preserve it
+		host.LinkedNodeID = previous.LinkedNodeID
+		log.Debug().
+			Str("hostId", identifier).
+			Str("hostname", hostname).
+			Str("linkedNodeId", previous.LinkedNodeID).
+			Msg("Preserved existing manual link to PVE node (auto-link ambiguous)")
 	}
 	if linkedVMID != "" {
 		host.LinkedVMID = linkedVMID
@@ -2990,6 +3002,8 @@ func (m *Monitor) ApplyHostReport(report agentshost.Report, tokenRecord *config.
 			Str("hostname", hostname).
 			Str("linkedVmId", linkedVMID).
 			Msg("Linked host agent to VM")
+	} else if hasPrevious && previous.LinkedVMID != "" {
+		host.LinkedVMID = previous.LinkedVMID
 	}
 	if linkedContainerID != "" {
 		host.LinkedContainerID = linkedContainerID
@@ -2998,6 +3012,8 @@ func (m *Monitor) ApplyHostReport(report agentshost.Report, tokenRecord *config.
 			Str("hostname", hostname).
 			Str("linkedContainerId", linkedContainerID).
 			Msg("Linked host agent to container")
+	} else if hasPrevious && previous.LinkedContainerID != "" {
+		host.LinkedContainerID = previous.LinkedContainerID
 	}
 
 	m.state.UpsertHost(host)
